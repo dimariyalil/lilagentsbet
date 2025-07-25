@@ -1,0 +1,33 @@
+[Unit]
+Description=lil_ken_ceo Telegram Bot
+After=network.target
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/lilagentsbet
+Environment=PATH=/home/ubuntu/lilagentsbet/venv/bin
+ExecStartPre=/usr/bin/docker-compose up -d
+ExecStart=/home/ubuntu/lilagentsbet/venv/bin/python src/main.py
+ExecStop=/usr/bin/docker-compose down
+Restart=always
+RestartSec=10
+
+# Настройки безопасности
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ubuntu/lilagentsbet/logs /home/ubuntu/lilagentsbet/data
+
+# Лимиты ресурсов
+LimitNOFILE=65536
+MemoryMax=2G
+
+# Переменные окружения
+EnvironmentFile=/home/ubuntu/lilagentsbet/.env
+
+[Install]
+WantedBy=multi-user.target
