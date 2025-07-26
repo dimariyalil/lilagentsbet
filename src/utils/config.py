@@ -1,39 +1,64 @@
 """
 Конфигурация приложения
 """
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 from pathlib import Path
+
+
+def get_env_var(key: str, default: Optional[str] = None) -> str:
+    """
+    Получает переменную окружения с fallback на .env файл
+    Сначала проверяет переменные окружения (для GitHub Actions),
+    затем загружает из .env файла (для локальной разработки)
+    """
+    value = os.getenv(key)
+    if value is not None:
+        return value
+    
+    # Если переменная не найдена в окружении, пытаемся загрузить из .env
+    env_file_path = Path(__file__).parent.parent.parent / ".env"
+    if env_file_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file_path)
+            return os.getenv(key, default)
+        except ImportError:
+            # dotenv не установлен, возвращаем default
+            pass
+    
+    return default
 
 
 class Settings(BaseSettings):
     """Настройки приложения"""
     
     # Telegram
-    TELEGRAM_BOT_TOKEN: str
-    TELEGRAM_BOT_USERNAME: str = "lil_ken_ceo_bot"
-    TELEGRAM_ADMIN_ID: Optional[int] = None
+    TELEGRAM_BOT_TOKEN: str = get_env_var("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_USERNAME: str = "LilagentsbetBot"  # Реальное имя бота
+    TELEGRAM_ADMIN_ID: Optional[int] = int(get_env_var("TELEGRAM_ADMIN_ID", "0")) or None
     
     # AI APIs
-    ANTHROPIC_API_KEY: str
-    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: str = get_env_var("ANTHROPIC_API_KEY", "")
+    OPENAI_API_KEY: Optional[str] = get_env_var("OPENAI_API_KEY")
     
     # Database
-    REDIS_URL: str = "redis://localhost:6379"
-    POSTGRES_URL: str = "postgresql://postgres:password@localhost:5432/lil_agents"
+    REDIS_URL: str = get_env_var("REDIS_URL", "redis://localhost:6379")
+    POSTGRES_URL: str = get_env_var("POSTGRES_URL", "postgresql://postgres:password@localhost:5432/lil_agents")
     
     # ChromaDB
-    CHROMADB_HOST: str = "localhost"
-    CHROMADB_PORT: int = 8000
+    CHROMADB_HOST: str = get_env_var("CHROMADB_HOST", "localhost")
+    CHROMADB_PORT: int = int(get_env_var("CHROMADB_PORT", "8000"))
     
     # n8n Integration
-    N8N_WEBHOOK_URL: Optional[str] = None
-    N8N_API_KEY: Optional[str] = None
+    N8N_WEBHOOK_URL: Optional[str] = get_env_var("N8N_WEBHOOK_URL")
+    N8N_API_KEY: Optional[str] = get_env_var("N8N_API_KEY")
     
     # Agent Configuration
-    AGENT_NAME: str = "lil_ken_ceo"
-    AGENT_LANGUAGE: str = "ru"
-    LOG_LEVEL: str = "INFO"
+    AGENT_NAME: str = get_env_var("AGENT_NAME", "lil_ken_ceo")
+    AGENT_LANGUAGE: str = get_env_var("AGENT_LANGUAGE", "ru")
+    LOG_LEVEL: str = get_env_var("LOG_LEVEL", "INFO")
     
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent.parent
@@ -41,11 +66,10 @@ class Settings(BaseSettings):
     KNOWLEDGE_BASE_DIR: Path = DATA_DIR / "knowledge_base" / AGENT_NAME
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-this"
-    API_RATE_LIMIT: int = 100
+    SECRET_KEY: str = get_env_var("SECRET_KEY", "your-secret-key-change-this")
+    API_RATE_LIMIT: int = int(get_env_var("API_RATE_LIMIT", "100"))
     
     class Config:
-        env_file = ".env"
         case_sensitive = True
 
 
