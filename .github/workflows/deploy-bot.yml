@@ -2,15 +2,15 @@ name: Deploy Telegram Bot
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:  # Позволяет запустить вручную
   schedule:
-    - cron: '*/5 * * * *'  # Перезапуск каждые 5 минут для надежности
+    - cron: '0 */6 * * *'  # Перезапуск каждые 6 часов для надежности
 
 jobs:
   deploy-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 6  # Максимум 6 минут работы
+    timeout-minutes: 360  # 6 часов максимум
     
     steps:
     - name: Checkout code
@@ -19,7 +19,7 @@ jobs:
     - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'  # Используем стабильную версию
+        python-version: '3.11'
     
     - name: Cache dependencies
       uses: actions/cache@v3
@@ -44,7 +44,7 @@ jobs:
                 print(f'ERROR: {var} is not set')
                 exit(1)
             else:
-                print(f'✓ {var} is set')
+                print(f'✓ {var} is set (length: {len(os.getenv(var))})')
         print('All required environment variables are configured')
         "
       env:
@@ -53,10 +53,44 @@ jobs:
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     
-    - name: Run bot
+    - name: Run bot with auto-restart
       run: |
         echo "🚀 Starting Telegram bot at $(date)"
-        timeout 300 python src/main.py || echo "Bot finished or timeout reached"
+        
+        # Функция для запуска бота с перезапуском
+        run_bot_with_restart() {
+          local restart_count=0
+          local max_restarts=10
+          
+          while [ $restart_count -lt $max_restarts ]; do
+            echo "Starting bot attempt $((restart_count + 1)) at $(date)"
+            
+            # Запускаем бота с таймаутом 30 минут
+            timeout 1800 python src/main.py &
+            BOT_PID=$!
+            
+            # Ждем завершения процесса
+            wait $BOT_PID
+            exit_code=$?
+            
+            if [ $exit_code -eq 0 ]; then
+              echo "Bot exited normally"
+              break
+            elif [ $exit_code -eq 124 ]; then
+              echo "Bot timeout reached, restarting..."
+            else
+              echo "Bot exited with error code $exit_code, restarting..."
+            fi
+            
+            restart_count=$((restart_count + 1))
+            echo "Waiting 10 seconds before restart..."
+            sleep 10
+          done
+          
+          echo "Bot execution completed or max restarts reached"
+        }
+        
+        run_bot_with_restart
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
@@ -67,4 +101,4 @@ jobs:
         
     - name: Log completion
       run: |
-        echo "✅ Bot execution completed at $(date)"
+        echo "✅ Bot workflow completed at $(date)"
