@@ -1,0 +1,70 @@
+name: Deploy Telegram Bot
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Позволяет запустить вручную
+  schedule:
+    - cron: '*/5 * * * *'  # Перезапуск каждые 5 минут для надежности
+
+jobs:
+  deploy-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6  # Максимум 6 минут работы
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'  # Используем стабильную версию
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Verify environment variables
+      run: |
+        python -c "
+        import os
+        required_vars = ['TELEGRAM_BOT_TOKEN', 'ANTHROPIC_API_KEY']
+        for var in required_vars:
+            if not os.getenv(var):
+                print(f'ERROR: {var} is not set')
+                exit(1)
+            else:
+                print(f'✓ {var} is set')
+        print('All required environment variables are configured')
+        "
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    
+    - name: Run bot
+      run: |
+        echo "🚀 Starting Telegram bot at $(date)"
+        timeout 300 python src/main.py || echo "Bot finished or timeout reached"
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        LOG_LEVEL: INFO
+        PYTHONUNBUFFERED: 1
+        
+    - name: Log completion
+      run: |
+        echo "✅ Bot execution completed at $(date)"
