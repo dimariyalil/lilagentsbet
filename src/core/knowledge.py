@@ -1,127 +1,59 @@
 """
-База знаний на ChromaDB
+Упрощенная база знаний (только в памяти)
 """
-import chromadb
-from chromadb.utils import embedding_functions
-from typing import List, Dict, Any, Optional
-import hashlib
-import json
+import logging
 from datetime import datetime
+from typing import Dict, Any, List, Optional
 
-from utils.config import settings
-from utils.logger import setup_logger
-
-logger = setup_logger("knowledge")
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeBase:
-    """База знаний агента"""
+    """Упрощенная база знаний агента (только в памяти)"""
     
     def __init__(self, agent_name: str):
         self.agent_name = agent_name
-        self.client = None
-        self.collection = None
-        self.embedding_function = None
-        self.memory_storage = []  # Fallback хранение в памяти
-        
-        try:
-            self.client = chromadb.HttpClient(
-                host=settings.CHROMADB_HOST,
-                port=settings.CHROMADB_PORT
-            )
-            
-            # Используем OpenAI embeddings
-            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
-            
-            # Создаем или получаем коллекцию
-            self.collection = self.client.get_or_create_collection(
-                name=f"{agent_name}_knowledge",
-                embedding_function=self.embedding_function
-            )
-            print(f"✅ ChromaDB подключен для агента {agent_name}")
-        except Exception as e:
-            print(f"⚠️ ChromaDB недоступен, используем память: {e}")
-            self.client = None
+        self.memory_storage: List[Dict[str, Any]] = []  # Хранение в памяти
+        logger.info(f"✅ In-memory knowledge base initialized for {agent_name}")
     
     async def initialize(self):
-        """Инициализация коллекции"""
-        try:
-            self.collection = self.client.get_or_create_collection(
-                name=f"{self.agent_name}_knowledge",
-                embedding_function=self.embedding_function
-            )
-            logger.info(f"Knowledge base initialized for {self.agent_name}")
-        except Exception as e:
-            logger.error(f"Failed to initialize knowledge base: {e}")
-            raise
+        """Инициализация базы знаний"""
+        logger.info(f"Knowledge base for {self.agent_name} ready")
+        return True
     
     async def add_document(
-        self, 
-        content: str, 
+        self,
+        content: str,
+        doc_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Добавление документа в базу знаний"""
-        # Генерируем ID документа
-        doc_id = hashlib.md5(content.encode()).hexdigest()
-        
-        # Добавляем метаданные
         if metadata is None:
             metadata = {}
         
+        # Добавляем системные метаданные
         metadata.update({
             "agent": self.agent_name,
             "timestamp": str(datetime.now()),
             "doc_id": doc_id
         })
         
-        if self.client and self.collection:
-            try:
-                # Добавляем в ChromaDB
-                self.collection.add(
-                    documents=[content],
-                    metadatas=[metadata],
-                    ids=[doc_id]
-                )
-                logger.info(f"Document {doc_id} added to ChromaDB")
-            except Exception as e:
-                logger.error(f"Failed to add document to ChromaDB: {e}")
-                # Fallback к хранению в памяти
-                self.memory_storage.append({
-                    "id": doc_id,
-                    "content": content,
-                    "metadata": metadata
-                })
-        else:
-            # Используем хранение в памяти
-            self.memory_storage.append({
-                "id": doc_id,
-                "content": content,
-                "metadata": metadata
-            })
-            logger.info(f"Document {doc_id} added to memory storage")
+        # Сохраняем в памяти
+        self.memory_storage.append({
+            "id": doc_id,
+            "content": content,
+            "metadata": metadata
+        })
         
+        logger.info(f"Document {doc_id} added to memory storage")
         return doc_id
     
     async def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         n_results: int = 5
     ) -> Dict[str, Any]:
-        """Поиск по базе знаний"""
-        if self.client and self.collection:
-            try:
-                # Поиск в ChromaDB
-                results = self.collection.query(
-                    query_texts=[query],
-                    n_results=n_results
-                )
-                return results
-            except Exception as e:
-                logger.error(f"Failed to search in ChromaDB: {e}")
-        
-        # Fallback поиск в памяти (простой текстовый поиск)
+        """Простой поиск в памяти"""
         matching_docs = []
         query_lower = query.lower()
         
@@ -132,7 +64,7 @@ class KnowledgeBase:
         # Ограничиваем количество результатов
         matching_docs = matching_docs[:n_results]
         
-        # Форматируем результат в стиле ChromaDB
+        # Форматируем результат
         if matching_docs:
             return {
                 "documents": [[doc["content"] for doc in matching_docs]],
@@ -144,26 +76,4 @@ class KnowledgeBase:
     
     async def get_doc_count(self) -> int:
         """Получение количества документов"""
-        if not self.collection:
-            return 0
-        
-        return self.collection.count()
-    
-    async def delete_document(self, doc_id: str):
-        """Удаление документа"""
-        self.collection.delete(ids=[doc_id])
-        logger.info(f"Deleted document {doc_id}")
-    
-    async def update_document(
-        self, 
-        doc_id: str, 
-        content: str, 
-        metadata: Optional[Dict[str, Any]] = None
-    ):
-        """Обновление документа"""
-        self.collection.update(
-            ids=[doc_id],
-            documents=[content],
-            metadatas=[metadata] if metadata else None
-        )
-        logger.info(f"Updated document {doc_id}")
+        return len(self.memory_storage)
