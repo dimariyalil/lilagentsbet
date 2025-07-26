@@ -1,152 +1,195 @@
 """
-Главный класс CEO агента
+Упрощенный CEO агент
 """
-import asyncio
+import logging
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from anthropic import AsyncAnthropic
-
-from .prompts import CEO_PROMPTS
-from .commands import CEOCommands
-from core.memory import MemoryManager
-from core.knowledge import KnowledgeBase
 from utils.config import settings
-from utils.logger import setup_logger
 
-logger = setup_logger("lil_ken_ceo")
+logger = logging.getLogger(__name__)
 
 
 class LilKenCEO:
-    """CEO Agent - Стратегический директор"""
+    """Упрощенный CEO Agent"""
     
     def __init__(self):
         self.name = "lil_ken_ceo"
         self.anthropic = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.memory = MemoryManager(self.name)
-        self.knowledge = KnowledgeBase(self.name)
-        self.commands = CEOCommands(self)
+        self.memory = {}  # Простая память в словаре
         self.initialized = False
     
     async def initialize(self):
         """Инициализация агента"""
-        if self.initialized:
-            return
-        
-        logger.info(f"Initializing {self.name}...")
-        
-        # Инициализируем базу знаний
-        await self.knowledge.initialize()
-        
-        # Загружаем начальные данные
-        await self._load_initial_knowledge()
-        
         self.initialized = True
-        logger.info(f"{self.name} initialized successfully")
-    
-    async def _load_initial_knowledge(self):
-        """Загрузка начальной базы знаний"""
-        # Здесь будет загрузка документов из knowledge_base
-        pass
+        logger.info(f"✅ {self.name} agent initialized")
+        return True
     
     async def process_message(self, message: str, user_id: int) -> str:
-        """Обработка сообщения от пользователя"""
+        """Обработка сообщения пользователя"""
         try:
-            # Получаем контекст из памяти
-            context = await self.memory.get_context(user_id)
+            # Простой запрос к Claude
+            response = await self.anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": f"""Ты опытный CEO и бизнес-консультант. Отвечай профессионально и полезно.
+                    
+Вопрос: {message}
+
+Дай краткий, но ценный совет как успешный руководитель."""
+                }]
+            )
             
-            # Ищем релевантную информацию в базе знаний
-            knowledge_context = await self.knowledge.search(message)
+            answer = response.content[0].text
             
-            # Формируем промпт
-            prompt = self._build_prompt(message, context, knowledge_context)
+            # Сохраняем в простую память
+            if user_id not in self.memory:
+                self.memory[user_id] = []
+            self.memory[user_id].append({
+                "message": message,
+                "response": answer,
+                "timestamp": datetime.now().isoformat()
+            })
             
-            # Получаем ответ от Claude
-            response = await self._get_ai_response(prompt)
-            
-            # Сохраняем в память
-            await self.memory.add_message(user_id, message, response)
-            
-            return response
+            return answer
             
         except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-            return "Произошла ошибка при обработке запроса. Попробуйте позже."
+            logger.error(f"Error processing message: {e}")
+            return "Извините, произошла ошибка. Попробуйте еще раз."
     
-    def _build_prompt(
-        self, 
-        message: str, 
-        context: Dict[str, Any], 
-        knowledge: Dict[str, Any]
-    ) -> str:
-        """Построение промпта для AI"""
-        system_prompt = CEO_PROMPTS["system"]
+    # Простые методы для команд
+    async def generate_year_strategy(self) -> str:
+        """Генерация годовой стратегии"""
+        prompt = """Создай краткую годовую стратегию для стартапа:
+- Ключевые цели на год
+- Основные метрики
+- План действий по кварталам
+- Потенциальные риски"""
         
-        prompt_parts = [
-            system_prompt,
-            f"\nТекущая дата: {datetime.now().strftime('%Y-%m-%d')}",
-        ]
-        
-        if knowledge.get("documents"):
-            prompt_parts.append("\nРелевантная информация из базы знаний:")
-            for doc in knowledge["documents"][:3]:
-                prompt_parts.append(f"- {doc['content'][:500]}...")
-        
-        if context.get("history"):
-            prompt_parts.append("\nПоследние сообщения:")
-            for msg in context["history"][-5:]:
-                prompt_parts.append(f"User: {msg['user']}")
-                prompt_parts.append(f"Assistant: {msg['assistant']}")
-        
-        prompt_parts.append(f"\nТекущий запрос пользователя: {message}")
-        
-        return "\n".join(prompt_parts)
-    
-    async def _get_ai_response(self, prompt: str) -> str:
-        """Получение ответа от Claude"""
         try:
             response = await self.anthropic.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=4000,
-                temperature=0.7,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
             )
             return response.content[0].text
         except Exception as e:
-            logger.error(f"Error getting AI response: {e}")
-            raise
-    
-    # Методы для команд
-    async def generate_year_strategy(self) -> str:
-        """Генерация годовой стратегии"""
-        return await self.commands.year_strategy()
+            return f"Ошибка: {e}"
     
     async def analyze_market(self, country: str) -> str:
-        """Анализ рынка страны"""
-        return await self.commands.market_analysis(country)
+        """Анализ рынка"""
+        prompt = f"""Проведи краткий анализ рынка {country}:
+- Размер рынка
+- Ключевые игроки
+- Возможности для входа
+- Основные вызовы"""
+        
+        try:
+            response = await self.anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Ошибка: {e}"
     
     async def competitor_analysis(self) -> str:
         """Анализ конкурентов"""
-        return await self.commands.competitor_watch()
+        prompt = """Создай шаблон для анализа конкурентов:
+- Методы поиска конкурентов
+- Ключевые метрики для сравнения
+- Анализ слабых и сильных сторон
+- Выводы и рекомендации"""
+        
+        try:
+            response = await self.anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Ошибка: {e}"
     
     async def swot_analysis(self) -> str:
         """SWOT анализ"""
-        return await self.commands.swot_analysis()
+        prompt = """Создай шаблон SWOT анализа для стартапа:
+- Strengths (Сильные стороны)
+- Weaknesses (Слабые стороны)  
+- Opportunities (Возможности)
+- Threats (Угрозы)"""
+        
+        try:
+            response = await self.anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Ошибка: {e}"
     
     async def risk_assessment(self) -> str:
         """Оценка рисков"""
-        return await self.commands.risk_assessment()
+        prompt = """Создай краткую оценку основных бизнес-рисков:
+- Финансовые риски
+- Операционные риски
+- Рыночные риски
+- Стратегические риски
+- Методы снижения рисков"""
+        
+        try:
+            response = await self.anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Ошибка: {e}"
     
     async def daily_report(self) -> str:
         """Ежедневный отчет"""
-        return await self.commands.daily_report()
+        return f"""📋 **Ежедневный отчет CEO**
+
+📅 **Дата:** {datetime.now().strftime('%d.%m.%Y')}
+
+🎯 **Приоритеты на сегодня:**
+• Проверка ключевых метрик
+• Встречи с командой  
+• Работа над стратегическими задачами
+
+📊 **Что отслеживать:**
+• Выручку и расходы
+• Активность пользователей
+• Прогресс по целям
+
+💡 **Рекомендации:**
+• Сосредоточьтесь на 3 главных задачах
+• Проведите 1:1 с ключевыми сотрудниками
+• Обновите инвесторов о прогрессе"""
     
     async def weekly_report(self) -> str:
-        """Недельный отчет"""  
-        return await self.commands.weekly_report()
-    
-    async def get_status(self) -> str:
-        """Получение статуса системы"""
-        return await self.commands.status()
+        """Недельный отчет"""
+        return f"""📅 **Недельный отчет CEO**
+
+🗓 **Неделя:** {datetime.now().strftime('%d.%m.%Y')}
+
+🎯 **Достижения недели:**
+• Выполненные цели
+• Ключевые решения
+• Прогресс команды
+
+📈 **Метрики:**
+• Рост пользователей
+• Финансовые показатели
+• Продуктивность команды
+
+🔮 **Планы на следующую неделю:**
+• Стратегические инициативы
+• Важные встречи
+• Критические задачи"""

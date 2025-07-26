@@ -1,103 +1,62 @@
 """
-Управление памятью агента
+Простая память в оперативной памяти
 """
-import json
-import redis.asyncio as redis
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime
 
-from utils.config import settings
-from utils.logger import setup_logger
-
-logger = setup_logger("memory")
+logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    """Менеджер памяти для агентов"""
+    """Простой менеджер памяти в оперативной памяти"""
     
     def __init__(self, agent_name: str):
         self.agent_name = agent_name
-        self.redis = None
-        self._connect()
+        self.memory: Dict[str, Any] = {}
+        self.conversations: Dict[int, list] = {}
+        logger.info(f"✅ Memory manager initialized for {agent_name}")
     
-    def _connect(self):
-        """Подключение к Redis"""
-        self.redis = redis.from_url(
-            settings.REDIS_URL,
-            decode_responses=True
-        )
+    async def initialize(self):
+        """Инициализация памяти"""
+        logger.info(f"Memory manager for {self.agent_name} ready")
+        return True
     
-    async def add_message(
-        self, 
-        user_id: int, 
-        user_message: str, 
-        assistant_message: str
-    ):
-        """Добавление сообщения в историю"""
-        key = f"{self.agent_name}:chat:{user_id}"
+    async def save_conversation(self, user_id: int, message: str, response: str):
+        """Сохранение разговора"""
+        if user_id not in self.conversations:
+            self.conversations[user_id] = []
         
-        message_data = {
-            "user": user_message,
-            "assistant": assistant_message,
-            "timestamp": datetime.now().isoformat()
-        }
+        self.conversations[user_id].append({
+            "timestamp": datetime.now().isoformat(),
+            "user_message": message,
+            "bot_response": response
+        })
         
-        # Добавляем в список
-        await self.redis.rpush(key, json.dumps(message_data))
-        
-        # Храним только последние 50 сообщений
-        await self.redis.ltrim(key, -50, -1)
-        
-        # Устанавливаем TTL на 7 дней
-        await self.redis.expire(key, timedelta(days=7))
+        # Ограничиваем историю последними 50 сообщениями
+        if len(self.conversations[user_id]) > 50:
+            self.conversations[user_id] = self.conversations[user_id][-50:]
     
-    async def get_context(self, user_id: int) -> Dict[str, Any]:
-        """Получение контекста диалога"""
-        key = f"{self.agent_name}:chat:{user_id}"
-        
-        # Получаем последние 10 сообщений
-        messages = await self.redis.lrange(key, -10, -1)
-        
-        history = []
-        for msg in messages:
-            history.append(json.loads(msg))
-        
-        return {
-            "user_id": user_id,
-            "history": history,
-            "message_count": len(history)
-        }
+    async def get_conversation_history(self, user_id: int, limit: int = 10) -> list:
+        """Получение истории разговора"""
+        if user_id not in self.conversations:
+            return []
+        return self.conversations[user_id][-limit:]
     
-    async def clear_context(self, user_id: int):
-        """Очистка контекста пользователя"""
-        key = f"{self.agent_name}:chat:{user_id}"
-        await self.redis.delete(key)
+    async def set(self, key: str, value: Any):
+        """Сохранение значения"""
+        self.memory[key] = value
     
-    async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
-        """Получение статистики пользователя"""
-        key = f"{self.agent_name}:stats:{user_id}"
-        
-        stats = await self.redis.hgetall(key)
-        if not stats:
-            stats = {
-                "total_messages": 0,
-                "first_interaction": None,
-                "last_interaction": None
-            }
-        
-        return stats
+    async def get(self, key: str) -> Optional[Any]:
+        """Получение значения"""
+        return self.memory.get(key)
     
-    async def update_user_stats(self, user_id: int):
-        """Обновление статистики пользователя"""
-        key = f"{self.agent_name}:stats:{user_id}"
-        
-        await self.redis.hincrby(key, "total_messages", 1)
-        await self.redis.hset(key, "last_interaction", datetime.now().isoformat())
-        
-        # Устанавливаем first_interaction если это первое сообщение
-        if not await self.redis.hexists(key, "first_interaction"):
-            await self.redis.hset(
-                key, 
-                "first_interaction", 
-                datetime.now().isoformat()
-            )
+    async def delete(self, key: str):
+        """Удаление значения"""
+        if key in self.memory:
+            del self.memory[key]
+    
+    async def clear_user_data(self, user_id: int):
+        """Очистка данных пользователя"""
+        if user_id in self.conversations:
+            del self.conversations[user_id]

@@ -1,5 +1,5 @@
 """
-Основной класс Telegram бота
+Простой Telegram бот
 """
 import logging
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,6 +15,11 @@ from telegram.ext import (
 from agents.lil_ken_ceo.agent import LilKenCEO
 from utils.config import settings
 
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 
