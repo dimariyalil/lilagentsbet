@@ -135,16 +135,16 @@ class LilKenCEO:
         """SWOT анализ"""
         return await self.commands.swot_analysis()
     
-    async def assess_risks(self) -> str:
+    async def risk_assessment(self) -> str:
         """Оценка рисков"""
         return await self.commands.risk_assessment()
     
-    async def generate_daily_report(self) -> str:
-        """Генерация ежедневного отчета"""
+    async def daily_report(self) -> str:
+        """Ежедневный отчет"""
         return await self.commands.daily_report()
     
-    async def generate_weekly_report(self) -> str:
-        """Генерация еженедельного отчета"""
+    async def weekly_report(self) -> str:
+        """Недельный отчет"""  
         return await self.commands.weekly_report()
     
     async def get_status(self) -> str:
