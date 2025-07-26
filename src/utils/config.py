@@ -3,6 +3,7 @@
 """
 import os
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 from pathlib import Path
 
@@ -31,13 +32,34 @@ def get_env_var(key: str, default: Optional[str] = None) -> str:
     return default
 
 
+def get_env_int(key: str, default: Optional[int] = None) -> Optional[int]:
+    """Безопасно получает целочисленную переменную окружения"""
+    value = get_env_var(key, "")
+    if not value or not value.strip():
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
+
+
 class Settings(BaseSettings):
     """Настройки приложения"""
     
     # Telegram
     TELEGRAM_BOT_TOKEN: str = get_env_var("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_BOT_USERNAME: str = "LilagentsbetBot"  # Реальное имя бота
-    TELEGRAM_ADMIN_ID: Optional[int] = int(get_env_var("TELEGRAM_ADMIN_ID", "0")) or None
+    TELEGRAM_ADMIN_ID: Optional[str] = get_env_var("TELEGRAM_ADMIN_ID", "")
+    
+    @field_validator('TELEGRAM_ADMIN_ID')
+    @classmethod
+    def validate_admin_id(cls, v):
+        if not v or not v.strip():
+            return None
+        try:
+            return int(v.strip())
+        except ValueError:
+            return None
     
     # AI APIs
     ANTHROPIC_API_KEY: str = get_env_var("ANTHROPIC_API_KEY", "")

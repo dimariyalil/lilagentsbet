@@ -19,17 +19,31 @@ class KnowledgeBase:
     
     def __init__(self, agent_name: str):
         self.agent_name = agent_name
-        self.client = chromadb.HttpClient(
-            host=settings.CHROMADB_HOST,
-            port=settings.CHROMADB_PORT
-        )
-        
-        # Используем OpenAI embeddings
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-        
+        self.client = None
         self.collection = None
+        self.embedding_function = None
+        self.memory_storage = []  # Fallback хранение в памяти
+        
+        try:
+            self.client = chromadb.HttpClient(
+                host=settings.CHROMADB_HOST,
+                port=settings.CHROMADB_PORT
+            )
+            
+            # Используем OpenAI embeddings
+            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
+            )
+            
+            # Создаем или получаем коллекцию
+            self.collection = self.client.get_or_create_collection(
+                name=f"{agent_name}_knowledge",
+                embedding_function=self.embedding_function
+            )
+            print(f"✅ ChromaDB подключен для агента {agent_name}")
+        except Exception as e:
+            print(f"⚠️ ChromaDB недоступен, используем память: {e}")
+            self.client = None
     
     async def initialize(self):
         """Инициализация коллекции"""
@@ -58,17 +72,36 @@ class KnowledgeBase:
         
         metadata.update({
             "agent": self.agent_name,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": str(datetime.now()),
+            "doc_id": doc_id
         })
         
-        # Добавляем в коллекцию
-        self.collection.add(
-            documents=[content],
-            metadatas=[metadata],
-            ids=[doc_id]
-        )
+        if self.client and self.collection:
+            try:
+                # Добавляем в ChromaDB
+                self.collection.add(
+                    documents=[content],
+                    metadatas=[metadata],
+                    ids=[doc_id]
+                )
+                logger.info(f"Document {doc_id} added to ChromaDB")
+            except Exception as e:
+                logger.error(f"Failed to add document to ChromaDB: {e}")
+                # Fallback к хранению в памяти
+                self.memory_storage.append({
+                    "id": doc_id,
+                    "content": content,
+                    "metadata": metadata
+                })
+        else:
+            # Используем хранение в памяти
+            self.memory_storage.append({
+                "id": doc_id,
+                "content": content,
+                "metadata": metadata
+            })
+            logger.info(f"Document {doc_id} added to memory storage")
         
-        logger.info(f"Added document {doc_id} to knowledge base")
         return doc_id
     
     async def search(
@@ -77,34 +110,37 @@ class KnowledgeBase:
         n_results: int = 5
     ) -> Dict[str, Any]:
         """Поиск по базе знаний"""
-        if not self.collection:
-            return {"documents": []}
+        if self.client and self.collection:
+            try:
+                # Поиск в ChromaDB
+                results = self.collection.query(
+                    query_texts=[query],
+                    n_results=n_results
+                )
+                return results
+            except Exception as e:
+                logger.error(f"Failed to search in ChromaDB: {e}")
         
-        try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results
-            )
-            
-            # Форматируем результаты
-            documents = []
-            if results['documents']:
-                for i, doc in enumerate(results['documents'][0]):
-                    documents.append({
-                        "content": doc,
-                        "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
-                        "distance": results['distances'][0][i] if results['distances'] else 0
-                    })
-            
+        # Fallback поиск в памяти (простой текстовый поиск)
+        matching_docs = []
+        query_lower = query.lower()
+        
+        for doc in self.memory_storage:
+            if query_lower in doc["content"].lower():
+                matching_docs.append(doc)
+        
+        # Ограничиваем количество результатов
+        matching_docs = matching_docs[:n_results]
+        
+        # Форматируем результат в стиле ChromaDB
+        if matching_docs:
             return {
-                "query": query,
-                "documents": documents,
-                "count": len(documents)
+                "documents": [[doc["content"] for doc in matching_docs]],
+                "metadatas": [[doc["metadata"] for doc in matching_docs]],
+                "ids": [[doc["id"] for doc in matching_docs]]
             }
-            
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            return {"documents": []}
+        
+        return {"documents": [[]]}
     
     async def get_doc_count(self) -> int:
         """Получение количества документов"""
