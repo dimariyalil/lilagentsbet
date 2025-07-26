@@ -188,7 +188,11 @@ class CEOBot:
         # Инициализируем агента
         await self.ceo_agent.initialize()
         
-        logger.info(f"Bot @{settings.TELEGRAM_BOT_USERNAME} started!")
+        # Логируем информацию о запуске с username из конфигурации
+        logger.info(f"🤖 Bot @{settings.TELEGRAM_BOT_USERNAME} started successfully!")
+        logger.info(f"📊 Agent: {settings.AGENT_NAME}")
+        logger.info(f"🌍 Language: {settings.AGENT_LANGUAGE}")
+        logger.info(f"📝 Log level: {settings.LOG_LEVEL}")
         
         # Запускаем polling
         await self.app.run_polling(allowed_updates=Update.ALL_TYPES)

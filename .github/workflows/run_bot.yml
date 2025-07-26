@@ -1,0 +1,82 @@
+name: Run Telegram Bot
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Позволяет запустить вручную
+  schedule:
+    - cron: '0 */6 * * *'  # Перезапуск каждые 6 часов для надежности
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Verify environment variables
+      run: |
+        python -c "
+        import os
+        required_vars = ['TELEGRAM_BOT_TOKEN', 'ANTHROPIC_API_KEY']
+        for var in required_vars:
+            if not os.getenv(var):
+                print(f'ERROR: {var} is not set')
+                exit(1)
+            else:
+                print(f'✓ {var} is set')
+        print('All required environment variables are configured')
+        "
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    
+    - name: Run bot with auto-restart
+      run: |
+        while true; do
+          echo "Starting bot at $(date)"
+          python src/main.py &
+          BOT_PID=$!
+          
+          # Ждем 30 минут, затем проверяем, работает ли бот
+          sleep 1800
+          
+          if kill -0 $BOT_PID 2>/dev/null; then
+            echo "Bot is still running after 30 minutes"
+            wait $BOT_PID
+          else
+            echo "Bot stopped, restarting..."
+          fi
+          
+          # Пауза перед перезапуском
+          sleep 10
+        done
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        LOG_LEVEL: INFO
+        PYTHONUNBUFFERED: 1
+      timeout-minutes: 360  # 6 часов максимум
